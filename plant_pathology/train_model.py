@@ -20,7 +20,7 @@ def main():
     train_model(args.images_path, args.annotations_path)
 
 
-def create_model(input_shape, n_outputs):
+def create_model(input_shape, n_outputs, multilabel=False):
     model = tf.keras.models.Sequential(
         [
             tf.keras.layers.RandomFlip(input_shape=input_shape),
@@ -39,17 +39,24 @@ def create_model(input_shape, n_outputs):
             tf.keras.layers.Flatten(),
             tf.keras.layers.Dense(1000, activation="relu"),
             tf.keras.layers.Dense(100, activation="relu"),
-            tf.keras.layers.Dense(n_outputs),
+            tf.keras.layers.Dense(n_outputs, activation="sigmoid"),
         ]
     )
+    loss = determine_loss_function(n_outputs, multilabel)
     model.compile(
-        loss=tf.keras.losses.BinaryCrossentropy(from_logits=True)
-        if n_outputs == 1
-        else tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=["accuracy"],
+        loss=loss,
+        metrics=["accuracy"] if not multilabel else [tf.keras.metrics.BinaryAccuracy()],
         optimizer="adam",
     )
     return model
+
+
+def determine_loss_function(n_outputs, multilabel):
+    if n_outputs == 1 or multilabel:
+        loss_fn = tf.keras.losses.BinaryCrossentropy(from_logits=False)
+    else:
+        loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
+    return loss_fn
 
 
 def gen_to_ds(ds_gen):
@@ -90,26 +97,28 @@ def train_model(images_path, annotations_path):
     ]
     input_shape = (224, 224, 3)
     train_ds, val_ds, label_encoder = create_datasets(
-        images_path, annotations_path, used_classes, random_state=42
+        images_path, annotations_path, random_state=42, multilabel=True
     )
     train_ds = train_ds.shuffle(18632).map(preprocess_img).batch(256)
     val_ds = val_ds.map(preprocess_img).batch(256)
-    model = create_model(input_shape, n_outputs=len(used_classes))
-    log_dir = pathlib.Path("logs-6-classes/6-normalization")
+    model = create_model(input_shape, n_outputs=len(used_classes), multilabel=True)
+    log_dir = pathlib.Path("logs-6-classes/7-multilabel")
     tb_callback = tf.keras.callbacks.TensorBoard(str(log_dir))
-    cm_callback = tf.keras.callbacks.LambdaCallback(
-        on_epoch_end=ConfusionMatrixLogger(model, val_ds, label_encoder, log_dir)
-    )
-    y_train = [y.numpy() for _, ys in train_ds for y in ys]
-    class_weights = compute_class_weight(
-        "balanced", classes=np.unique(y_train), y=y_train
-    )
+
+    # cm_callback = tf.keras.callbacks.LambdaCallback(
+    #    on_epoch_end=ConfusionMatrixLogger(model, val_ds, label_encoder, log_dir)
+    # )
+
+    # y_train = [y.numpy() for _, ys in train_ds for y in ys]
+    # class_weights = compute_class_weight(
+    #    "balanced", classes=np.unique(y_train), y=y_train
+    # )
     model.fit(
         train_ds,
         validation_data=val_ds,
         epochs=1000,
-        callbacks=[tb_callback, cm_callback],
-        class_weight=dict(enumerate(class_weights)),
+        callbacks=[tb_callback],
+        # class_weight=dict(enumerate(class_weights)),
     )
 
     pred = model.predict(val_ds)

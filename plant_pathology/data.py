@@ -1,6 +1,6 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, MultiLabelBinarizer
 import tensorflow as tf
 
 
@@ -20,26 +20,39 @@ def load_image(
     return img
 
 
-def create_datasets(images_path, images_csv, used_classes=None, random_state=None):
+def create_datasets(
+    images_path, images_csv, /, multilabel=False, used_classes=None, random_state=None
+):
     images_df = pd.read_csv(images_csv)
     if not images_path.endswith("/"):
         images_path += "/"
     images_df["image"] = images_path + images_df["image"]
 
-    label_encoder = LabelEncoder()
+    if multilabel:
+        train_idx = ~images_df["labels"].str.contains(" ")
+        labels = images_df["labels"].apply(lambda x: x.split(" "))
+        encoder = MultiLabelBinarizer()
+        labels_bin = encoder.fit_transform(labels)
 
-    if used_classes is not None:
-        images_df = images_df.query("labels in @used_classes")
-    labels = label_encoder.fit_transform(images_df["labels"])
+        x_train = images_df[train_idx]["image"]
+        y_train = labels_bin[train_idx]
+        x_val = images_df[~train_idx]["image"]
+        y_val = labels_bin[~train_idx]
+    else:
+        encoder = LabelEncoder()
 
-    x_train, x_val, y_train, y_val = train_test_split(
-        images_df["image"],
-        labels,
-        stratify=labels,
-        test_size=0.2,
-        random_state=random_state,
-    )
+        if used_classes is not None:
+            images_df = images_df.query("labels in @used_classes")
+        labels = encoder.fit_transform(images_df["labels"])
+
+        x_train, x_val, y_train, y_val = train_test_split(
+            images_df["image"],
+            labels,
+            stratify=labels,
+            test_size=0.2,
+            random_state=random_state,
+        )
 
     train_ds = tf.data.Dataset.from_tensor_slices((x_train, y_train))
     val_ds = tf.data.Dataset.from_tensor_slices((x_val, y_val))
-    return train_ds, val_ds, label_encoder
+    return train_ds, val_ds, encoder
