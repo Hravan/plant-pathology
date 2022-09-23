@@ -46,12 +46,8 @@ class ImageReader:
         self.crop_to_aspect_ratio = crop_to_aspect_ratio
 
     @staticmethod
-    def load_image(
-        path,
-        image_size,
-    ):
+    def load_image(path, num_channels):
         """Load an image from a path and resize it."""
-        *_, num_channels = image_size
         img = tf.io.read_file(path)
         img = tf.image.decode_image(
             img, channels=num_channels, expand_animations=False
@@ -60,7 +56,7 @@ class ImageReader:
 
     @staticmethod
     def crop(image, image_size, interpolation, crop_to_aspect_ratio=False):
-        height, width, _ = image_size
+        height, width, num_channels = image_size
         if crop_to_aspect_ratio:
             image = tf.keras.preprocessing.image.smart_resize(
                 image, image_size, interpolation=interpolation
@@ -69,11 +65,11 @@ class ImageReader:
             image = tf.image.resize(
                 image, (height, width), method=interpolation
             )
-        # image.set_shape((image_size[0], image_size[1], num_channels))
+        image.set_shape((image_size[0], image_size[1], num_channels))
         return image
 
     def __call__(self, image_path):
-        image = self.load_image(image_path, self.image_size)
+        image = self.load_image(image_path, self.image_size[-1])
         image = self.crop(
             image,
             self.image_size,

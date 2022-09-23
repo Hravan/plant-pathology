@@ -32,7 +32,6 @@ def train_model(images_path, annotations_csv_path, batch_size):
         dataset.train_ds.shuffle(len(dataset.train_ds))
         .map(lambda x, y: (image_reader(x), y))
         .batch(batch_size)
-        .prefetch(tf.data.AUTOTUNE)
     )
 
     val_ds = dataset.val_ds.map(lambda x, y: (image_reader(x), y)).batch(
